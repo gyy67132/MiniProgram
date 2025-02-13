@@ -1,13 +1,53 @@
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime
-import time
+from datetime import datetime,timedelta
 import re
+import time
 
 NEWS_TYPE = ['国内', '国际', '财经', '文体娱乐', '生活服务', '健康养生']
 NEWS_NUM = [10,8,5,4,5,2]
 
-def get_xinhua_news(urls):
+from datetime import datetime, timedelta
+import re
+
+from datetime import datetime
+import re
+
+def check_news_date(link, news_soup):
+    """检查新闻是否为今天发布"""
+    today = (datetime.now()).date()
+    today_str = today.strftime('%Y-%m-%d')  # 2024-02-12
+    today_compact = today.strftime('%Y%m%d') # 20240212
+    
+    try:
+        # 1. 获取页面所有文本
+        page_text = str(news_soup)  # 包含HTML标签的完整文本
+        
+        # 2. 检查所有可能的日期格式
+        date_patterns = [
+            # URL中的日期
+            rf'/({today.year})-({today.month:02d})/({today.day:02d})',  # /2024-02/12
+            rf'/({today_compact})',  # /20240212
+            
+            # 正文中的日期格式
+            rf'{today.year}年{today.month}月{today.day}日',  # 2024年2月12日
+            rf'{today.year}-{today.month:02d}-{today.day:02d}',  # 2024-02-12
+            rf'{today.year}/{today.month:02d}/{today.day:02d}',  # 2024/02/12
+            rf'{today.year}\.{today.month:02d}\.{today.day:02d}'  # 2024.02.12
+        ]
+        
+        # 3. 在URL和页面内容中查找今天的日期
+        for pattern in date_patterns:
+            if re.search(pattern, link) or re.search(pattern, page_text):
+                return True
+                    
+        return False
+        
+    except Exception:
+        return False
+
+
+def get_today_news(urls):
    
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
@@ -31,6 +71,7 @@ def get_xinhua_news(urls):
             # 尝试更多的选择器
             news_list = []
             selectors = [
+                
                 'a',  # 所有链接
                 '.news',  # 新闻类
                 '.content',  # 内容类
@@ -42,7 +83,49 @@ def get_xinhua_news(urls):
                 'h2 a',  # h2标签中的链接
                 'h3 a',  # h3标签中的链接
                 '.top-news',  # 顶部新闻
-                '.focus-news'  # 焦点新闻
+                '.focus-news',  # 焦点新闻
+            
+
+                # 列表类选择器
+                'ul.dataList li a',           # 新华网等
+                'ul.newsList li a',           # 常见新闻列表
+                'ul.list li a',               # 通用列表
+                'div.list a',                 # 通用列表容器
+                '.news-list a',               # 新闻列表
+                '.articleList a',             # 文章列表
+                
+                # 新闻内容区选择器
+                'div.news_box a',             # 新闻盒子
+                'div.content a',              # 内容区
+                'div.article a',              # 文章区
+                '.main-news a',               # 主要新闻区
+                
+                # 标题类选择器
+                'a.title',                    # 标题链接
+                '.news-title',                # 新闻标题
+                '.article-title',             # 文章标题
+                'h3.title a',                 # 标题标签
+                
+                # 特定位置新闻选择器
+                '.top-news a',                # 头条新闻
+                '.focus-news a',              # 焦点新闻
+                '.latest-news a',             # 最新新闻
+                
+                # 分类新闻选择器
+                '.domestic a',                # 国内新闻
+                '.international a',           # 国际新闻
+                '.politics a',                # 政治新闻
+                '.finance a',                 # 财经新闻
+                
+                # 通用容器选择器
+                '.container a',               # 通用容器
+                '.wrapper a',                 # 通用包装器
+                '.main a',                    # 主要区域
+                
+                # 特定网站选择器
+                '.xinhua-news a',             # 新华网
+                '.cctv-news a',              # 央视网
+                '.ce-news a'                  # 中国经济网
             ]
             
             for selector in selectors:
@@ -53,9 +136,6 @@ def get_xinhua_news(urls):
                             news_list.append(item)
             
             print(f"找到 {len(news_list)} 条可能的新闻，开始筛选...")
-        
-            today = datetime.now().strftime('%Y%m%d')  # 获取当前日期，格式如：20240321
-            today_dash = datetime.now().strftime('%Y-%m-%d')  # 格式如：2024-03-21
 
             for news in news_list:
                 try:
@@ -75,16 +155,20 @@ def get_xinhua_news(urls):
                             link = '/' + link
                         link = 'http://www.news.cn' + link
                     
-                    news_time = soup.find(['time', 'span', 'div'], 
-                                        class_=['time', 'date', 'publish-time', 'article-time'])
-                    if news_time:
-                        publish_time = news_time.get_text().strip()
-                        if today_dash not in publish_time:
-                            continue
                     
-                    # 检查链接中是否包含今天的日期
-                    #if today not in link.replace('-', '') and today_dash not in link:
-                        #continue
+                    # 在get_today_news函数中替换原来的日期检查部分：
+                    try:
+                        news_response = requests.get(link, headers=headers, timeout=5)
+                        news_response.encoding = 'utf-8'
+                        news_soup = BeautifulSoup(news_response.text, 'html.parser')
+                        
+                        if not check_news_date(link, news_soup):
+                            #print(f"{link}新闻 {title} 不是当天新闻，跳过")
+                            continue
+                        
+                    except Exception as e:
+                        print(f"获取新闻详情页失败: {str(e)}")
+                        continue
 
                     # 过滤非新闻内容
                     if any(x in title for x in ['视频', '图片', '直播', '登录', '注册', '手机版']):
@@ -115,68 +199,87 @@ def get_xinhua_news(urls):
     return today_news
 
 def get_news_content(url):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
-    }
-    
+    """获取新闻内容"""
     try:
-        #print(f"\n正在获取文章内容: {url}")
-        response = requests.get(url, headers=headers, timeout=10)
-        response.encoding = 'utf-8'
-        soup = BeautifulSoup(response.text, 'html.parser')
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+        }
         
-        # 尝试多个可能的内容选择器
-        content_selectors = [
-            'div.article-content',  # 标准文章内容
-            'div#detail',           # 详情内容
-            'div.content',          # 通用内容
-            'div.main-content',     # 主要内容
-            'div.article',          # 文章区域
-            'div#content',          # 内容ID
-            'div.text',             # 文本内容
-            'div.article-body',     # 文章主体
-            'div.main-aticle'       # 另一种文章内容
+        # 定义错误页面的关键词
+        error_keywords = [
+            '页面不存在',
+            '已被删除',
+            '404',
+            'Not Found',
+            '访问的页面不存在',
+            '无法找到页面',
+            '页面错误',
+            '无法访问'
         ]
         
-        # 尝试所有可能的选择器
-        for selector in content_selectors:
-            content = soup.select_one(selector)
-            if content:
-                # 获取所有段落文本
-                paragraphs = content.find_all(['p', 'div'])
-                text_content = []
-                
-                for p in paragraphs:
-                    text = p.get_text().strip()
-                    if text and len(text) > 10:  # 过滤掉太短的段落
-                        text_content.append(text)
-                
-                if text_content:
-                    #print("成功获取文章内容")
-                    return "\n".join(text_content)
+        response = requests.get(url, headers=headers, timeout=10)
+        response.encoding = response.apparent_encoding
         
-        # 如果上面的选择器都失败了，尝试获取正文部分
-        article_text = []
-        # 查找所有可能的段落
-        paragraphs = soup.find_all(['p', 'div'], class_=['p-text', 'text', 'article-paragraph'])
-        for p in paragraphs:
-            text = p.get_text().strip()
-            if text and len(text) > 10:
-                article_text.append(text)
-        
-        if article_text:
-            #print("通过段落获取到文章内容")
-            return "\n".join(article_text)
+        # 检查响应状态
+        if response.status_code != 200:
+            return None
             
-        #print("无法找到文章内容，返回页面标题")
-        # 如果还是找不到内容，至少返回标题
-        #title = soup.find('title')
-        #return f"只找到标题: {title.text if title else '无标题'}"
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # 检查页面标题是否包含错误关键词
+        title = soup.title.string if soup.title else ''
+        if any(keyword in title for keyword in error_keywords):
+            return None
+            
+        content_selectors = [
+            'div.article-content',
+            'div.content',
+            'div.article',
+            'div.main-content',
+            'div.text',
+            'div.detail',
+            '#article',
+            '#content',
+            '.article-body',
+            '.news-text',
+            'div.contentMain',
+            'div.article_content',
+            'div.news-content',
+            'div.main'
+        ]
+        
+        # 尝试每个选择器
+        for selector in content_selectors:
+            content_div = soup.select_one(selector)
+            if content_div:
+                # 清理内容
+                [x.extract() for x in content_div.find_all(['script', 'style', 'iframe'])]
+                content = content_div.get_text(strip=True)
+                # 检查内容是否包含错误关键词
+                if len(content) > 100 and not any(keyword in content for keyword in error_keywords):
+                    return content
+        
+        # 尝试段落
+        paragraphs = soup.find_all(['p'])
+        if paragraphs:
+            content = '\n'.join([p.get_text(strip=True) for p in paragraphs 
+                               if len(p.get_text(strip=True)) > 20])
+            if len(content) > 100 and not any(keyword in content for keyword in error_keywords):
+                return content
+                
+        # 最后尝试正文
+        body = soup.find('body')
+        if body:
+            [x.extract() for x in body.find_all(['script', 'style', 'iframe', 'header', 'footer', 'nav'])]
+            content = body.get_text(strip=True)
+            if len(content) > 100 and not any(keyword in content for keyword in error_keywords):
+                return content
+                
         return None
+        
     except Exception as e:
-        print(f"获取文章内容时发生错误: {str(e)}")
         return None
 
 def is_chinese_text(text):
@@ -194,19 +297,30 @@ def get_news_list():
     urls=[
         [
             "http://www.cctv.com/cctv4/",
-            "http://www.news.cn/domestic/",   # 国内新闻
+            "http://www.news.cn/domestic/",             # 国内新闻
             "http://www.xinhuanet.com/politics/",    # 时政频道（主要国内新闻源）
             #"http://www.news.cn/politics/",          # 时政频道备用地址
-            #"http://www.news.cn/local/",             # 地方新闻
+            "http://www.news.cn/local/",             # 地方新闻
             #"http://www.xinhuanet.com/local/",       # 地方新闻备用地址
+            "https://www.qq.com/"
         ],
         [
             "http://www.cctv.com/cctv4/",
             "http://www.news.cn/world/",      # 国际频道
+            #"http://finance.ifeng.com/",
+            #"https://news.qq.com/ch/world/",
+            "http://intl.ce.cn/",
+            "https://www.chinanews.com/world/"
         ],
         [
-            "https://finance.cctv.com/",
             "http://www.news.cn/finance/",   # 财经频道（备用地址）
+            "http://finance.people.com.cn/",
+            "https://finance.cctv.com/",
+            #"http://www.ce.cn/",
+            "https://finance.qq.com/",
+            "http://finance.ce.cn/",
+            "https://economy.gmw.cn/"
+            #"https://cn.chinadaily.com.cn/business/"
         ],
         [
             #"http://www.news.cn/sports/",     # 体育频道
@@ -218,6 +332,7 @@ def get_news_list():
             "http://www.news.cn/food/",       # 美食频道
             "http://www.news.cn/fashion/",    # 时尚频道
             "http://www.news.cn/travel/",     # 旅游频道
+            "http://www.xinhuanet.com/house/"
         ],
         [
             "http://www.news.cn/health/",     # 健康频道
@@ -232,7 +347,7 @@ def get_news_list():
 
     for group_index, url_group in enumerate(urls):
         
-        news = get_xinhua_news(url_group)
+        news = get_today_news(url_group)
         print(f"\n {group_index + 1} 组共获取到 {len(news)} 条新闻")
         
         result_news_group = []
@@ -241,11 +356,11 @@ def get_news_list():
         
         for index,item in enumerate(news):
             content = get_news_content(item['link'])
-            if content and is_chinese_text(item['title']):
+            if content and is_chinese_text(item['title']) and "页面不存在" not in content:
                 result_news_group.append(content[:1000])
                 count += 1
                 # print(f"\n{count}.标题： {item['title']}")
-                # print(f"  链接：{item['link']}")
+                print(f"  链接：{item['link']}")
                 # print(f"  时间：{item['time']}")
                 # print(f"  内容：{content[:100]}...")  # 只显示前200个字符
                 # print("-" * 50)
